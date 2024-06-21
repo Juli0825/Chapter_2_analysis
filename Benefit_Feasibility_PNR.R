@@ -1,5 +1,6 @@
 library(raster)
 library(sp)
+library(scales)
 
 # Set working directory
 setwd("R:/Natural_regneration_BF_datasets/Chapter_2_analysis")
@@ -37,17 +38,41 @@ str(points_pnr_df)
 # Print the first few rows of the pnr data frame to verify
 print(head(points_pnr_df))
 
+# Check the minimum and maximum values of the PNR raster (if it's 0-1 ranged)
+pnr_min <- minValue(raster_pnr)
+pnr_max <- maxValue(raster_pnr)
+
+# Print the minimum and maximum values
+print(paste("Minimum value of PNR raster:", pnr_min))
+print(paste("Maximum value of PNR raster:", pnr_max))
+
 ##### Second, pre-process benefits variables, mask into same extent/projection/resolution ######
 
-#Biodiversity layer
+#carbon layer
 
+# Load the carbon sequestration raster
+carbon_raster <- raster("Data/Benefits/Cook_Patton_Carbon/young_forest_sequestration_rate_Griscom_extent.tif")
 
+# Ensure the carbon layer has the same projection, extent, resolution with the pnr layer
+carbon_raster <- projectRaster(carbon_raster, raster_pnr)
 
+# Custom rescale function that handles NA values
+rescale_with_na <- function(x) {
+  valid_values <- !is.na(x)
+  x[valid_values] <- scales::rescale(x[valid_values], to = c(0, 1))
+  return(x)
+}
 
+# Rescale the carbon layer to 0-1 range while handling NA values
+carbon_raster <- calc(carbon_raster, rescale_with_na)
 
+# Convert the rescaled  to points
+pnr_points <- rasterToPoints(pnr_raster, spatial = TRUE)
+carbon_points <- rasterToPoints(carbon_raster, spatial = TRUE)
 
-
-
+# Create data frames from the points data
+pnr_df <- as.data.frame(pnr_points)
+carbon_df <- as.data.frame(carbon_points)
 
 
 
