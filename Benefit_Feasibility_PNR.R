@@ -58,6 +58,9 @@ carbon_raster <- projectRaster(carbon_raster, raster_pnr)
 
 # Custom rescale function that handles NA values
 rescale_with_na <- function(x) {
+  if (all(is.na(x))) {
+    return(x)
+  }
   valid_values <- !is.na(x)
   x[valid_values] <- scales::rescale(x[valid_values], to = c(0, 1))
   return(x)
@@ -66,20 +69,26 @@ rescale_with_na <- function(x) {
 # Rescale the carbon layer to 0-1 range while handling NA values
 carbon_raster <- calc(carbon_raster, rescale_with_na)
 
-# Convert the rescaled  to points
-pnr_points <- rasterToPoints(pnr_raster, spatial = TRUE)
+# Verify the rescaled values
+carbon_min_rescaled <- minValue(carbon_raster)
+carbon_max_rescaled <- maxValue(carbon_raster)
+
+# Print the rescaled minimum and maximum values
+print(paste("Minimum value of rescaled Carbon raster:", carbon_min_rescaled))
+print(paste("Maximum value of rescaled Carbon raster:", carbon_max_rescaled))
+
+# Convert the rescaled carbon raster to points and extract coordinates and values
 carbon_points <- rasterToPoints(carbon_raster, spatial = TRUE)
+carbon_coords <- coordinates(carbon_points)
+carbon_values <- as.data.frame(carbon_points)[, 1]
 
-# Create data frames from the points data
-pnr_df <- as.data.frame(pnr_points)
-carbon_df <- as.data.frame(carbon_points)
+# Combine coordinates and values into a data frame for Carbon raster
+carbon_df <- data.frame(Longitude = carbon_coords[, 1], Latitude = carbon_coords[, 2], Carbon_score = carbon_values)
 
+# Check the structure of the carbon points dataframe
+print(head(carbon_df))
 
-
-
-
-
-
+# IUCN threatened biodiversity layer#
 
 
 
