@@ -3,6 +3,8 @@ library(scales)
 library(raster)
 library(sp)
 library(dplyr)
+library(sf)
+library(exactextractr)
 
 # Set working directory
 setwd("R:/Natural_regneration_BF_datasets/Chapter_2_analysis")
@@ -33,6 +35,13 @@ pnr_values <- as.data.frame(pnr_points)[, 1]
 # Combine coordinates and values into a data frame
 pnr_df <- data.frame(Longitude = pnr_coords[, 1], Latitude = pnr_coords[, 2], PNR_score = pnr_values)
 
+# Subset to remove rows where PNR_score is 0
+pnr_df <- pnr_df[pnr_df$PNR_score != 0, ]
+# Save the dataframe as an RData file
+save(pnr_df, file = "./preprocessing/pnr_data.RData")
+# Load the saved RData file
+load("pnr_data.RData")
+
 # Print the first few rows of the pnr data frame to verify
 print(head(pnr_df))
 
@@ -47,8 +56,11 @@ carbon_raster <- rast("Data/Benefits/Cook_Patton_Carbon/young_forest_sequestrati
 # Load pnr raster again easier in using terra for reprojection
 project_pnr <- rast("Data/PNR_1KM.tif")
 
+# Ensure the CRS of the PNR raster and carbon raster are the same
+crs(carbon_raster) <- crs(project_pnr)
+
 # Reproject the carbon raster to match the CRS of the PNR raster
-carbon_raster <- terra::project(carbon_raster, project_pnr)
+carbon_raster_proj <- terra::project(carbon_raster, project_pnr)
 
 # Resample the carbon raster to match the extent and resolution of the PNR raster
 carbon_raster <- terra::resample(carbon_raster, project_pnr, method='bilinear')
@@ -57,30 +69,69 @@ carbon_raster <- terra::resample(carbon_raster, project_pnr, method='bilinear')
 carbon_raster <- raster(carbon_raster)
 
 # Custom rescale function that handles NA values
-rescale_with_na <- function(x) {
-  if (all(is.na(x))) {
-    return(x)
-  }
-  valid_values <- !is.na(x)
-  x[valid_values] <- scales::rescale(x[valid_values], to = c(0, 1))
-  return(x)
-}
-
-# Rescale the carbon layer to 0-1 range while handling NA values
-carbon_rescale_raster <- calc(carbon_raster, rescale_with_na)
-
-# Verify the rescaled values
-carbon_min_rescaled <- minValue(carbon_rescale_raster)
-carbon_max_rescaled <- maxValue(carbon_rescale_raster)
+# rescale_with_na <- function(x) {
+#   if (all(is.na(x))) {
+#     return(x)
+#   }
+#   valid_values <- !is.na(x)
+#   x[valid_values] <- scales::rescale(x[valid_values], to = c(0, 1))
+#   return(x)
+# }
+# 
+# # Rescale the carbon layer to 0-1 range while handling NA values
+# carbon_rescale_raster <- calc(carbon_raster, rescale_with_na)
+# 
+# # Verify the rescaled values
+# carbon_min_rescaled <- minValue(carbon_rescale_raster)
+# carbon_max_rescaled <- maxValue(carbon_rescale_raster)
 
 # Print the rescaled minimum and maximum values
-print(paste("Minimum value of rescaled Carbon raster:", carbon_min_rescaled))
-print(paste("Maximum value of rescaled Carbon raster:", carbon_max_rescaled))
+# print(paste("Minimum value of rescaled Carbon raster:", carbon_min_rescaled))
+# print(paste("Maximum value of rescaled Carbon raster:", carbon_max_rescaled))
 
 # Extract coordinates and values using raster functions
-carbon_values <- extract(carbon_rescale_raster, pnr_coords)
-carbon_df <- data.frame(Longitude = pnr_coords[, 1], Latitude = pnr_coords[, 2], Carbon_score = carbon_values)
+# Create an sf pnr points layer (with 0 been removed) to extract carbon values accordingly///this doesn't work well
+#pnr_points_filtered <- st_as_sf(pnr_df, coords = c("Longitude", "Latitude"), crs = crs(pnr_raster))
+
+# Create SpatialPointsDataFrame for filtered PNR points
+coordinates(pnr_df) <- ~Longitude + Latitude
+proj4string(pnr_df) <- proj4string(pnr_raster)
+
+# Extract carbon values according to small PNR points
+carbon_values <- extract(carbon_raster, pnr_df)
+
+# Create a carbon dataframe using filtered PNR layer coordinates
+carbon_df <- data.frame(Longitude = pnr_df$Longitude, Latitude = pnr_df$Latitude, Carbon_score = carbon_values)
+
+# Check carbon dataframe
 print(head(carbon_df))
+
+# Extract carbon values according to small pnr points
+carbon_values <- extract(carbon_raster, pnr_points_filtered)
+
+carbon_values <- raster::extract(carbon_raster, as(pnr_points_filtered, "Spatial"))
+
+# Create a carbon dataframe using filtered pnr layer coordinates
+carbon_df <- data.frame(Longitude = pnr_df$Longitude, Latitude = pnr_df$Latitude, Carbon_score = carbon_values)
+
+# Extract filtered pnr points coordinates
+pnr_filtered_coords <- coordinates(pnr_points_filtered)
+
+# Create a carbon dataframe using small pnr layer coordination
+carbon_df <- data.frame(Longitude = pnr_filtered_coords[, 1], Latitude = pnr_filtered_coords[, 2], Carbon_score = carbon_values)
+
+# Check carbon dataframe
+print(head(carbon_df))
+
+# Subset to remove rows where carbon values are NA
+carbon_df <- carbon_df[carbon_df$carbon_values != NA, ]
+
+# Subset to remove rows where PNR_score is 0
+pnr_df <- pnr_df[pnr_df$PNR_score != 0, ]
+# Save the dataframe as an RData file
+save(pnr_df, file = "./preprocessing/pnr_data.RData")
+# Load the saved RData file
+load("pnr_data.RData")
 
 ### the above trial match with pnr points, but there are some NA values ######
 
