@@ -9,7 +9,7 @@ library(exactextractr)
 # Set working directory
 setwd("R:/Natural_regneration_BF_datasets/Chapter_2_analysis")
 
-##### First, convert potential for natural regeneration raster into points with attribute table #########
+ ##### First, convert potential for natural regeneration raster into points with attribute table #########
 
 # Load the Potential for natural regeneration file
 pnr_raster <- raster("Data/PNR_1KM.tif")
@@ -37,10 +37,12 @@ pnr_df <- data.frame(Longitude = pnr_coords[, 1], Latitude = pnr_coords[, 2], PN
 
 # Subset to remove rows where PNR_score is 0
 pnr_df <- pnr_df[pnr_df$PNR_score != 0, ]
+
 # Save the dataframe as an RData file
 save(pnr_df, file = "./preprocessing/pnr_data.RData")
+
 # Load the saved RData file
-load("pnr_data.RData")
+load("preprocessing/pnr_data.RData")
 
 # Print the first few rows of the pnr data frame to verify
 print(head(pnr_df))
@@ -48,10 +50,10 @@ print(head(pnr_df))
 
 ##### Second, pre-process benefits variables, mask into same extent/projection/resolution with the pnr layer ######
 
-######## carbon layer ####### trial#########
+######## carbon layer#########
 
 # Load the carbon sequestration raster
-carbon_raster <- rast("Data/Benefits/Cook_Patton_Carbon/young_forest_sequestration_rate_Griscom_extent.tif")
+carbon_raster <- rast("Data/Benefits/Cook_Patton_Carbon/sequestration_rate__mean__aboveground__full_extent__Mg_C_ha_yr.tif")
 
 # Load pnr raster again easier in using terra for reprojection
 project_pnr <- rast("Data/PNR_1KM.tif")
@@ -62,233 +64,128 @@ crs(carbon_raster) <- crs(project_pnr)
 # Reproject the carbon raster to match the CRS of the PNR raster
 carbon_raster_proj <- terra::project(carbon_raster, project_pnr)
 
-# Resample the carbon raster to match the extent and resolution of the PNR raster
-carbon_raster <- terra::resample(carbon_raster, project_pnr, method='bilinear')
-
 # Convert terra raster to raster object for extract coordination/carbon value/create dataframe
-carbon_raster <- raster(carbon_raster)
+carbon_raster <- raster(carbon_raster_proj)
 
-# Custom rescale function that handles NA values
-# rescale_with_na <- function(x) {
-#   if (all(is.na(x))) {
-#     return(x)
-#   }
-#   valid_values <- !is.na(x)
-#   x[valid_values] <- scales::rescale(x[valid_values], to = c(0, 1))
-#   return(x)
-# }
-# 
-# # Rescale the carbon layer to 0-1 range while handling NA values
-# carbon_rescale_raster <- calc(carbon_raster, rescale_with_na)
-# 
-# # Verify the rescaled values
-# carbon_min_rescaled <- minValue(carbon_rescale_raster)
-# carbon_max_rescaled <- maxValue(carbon_rescale_raster)
-
-# Print the rescaled minimum and maximum values
-# print(paste("Minimum value of rescaled Carbon raster:", carbon_min_rescaled))
-# print(paste("Maximum value of rescaled Carbon raster:", carbon_max_rescaled))
-
-# Extract coordinates and values using raster functions
-# Create an sf pnr points layer (with 0 been removed) to extract carbon values accordingly///this doesn't work well
-#pnr_points_filtered <- st_as_sf(pnr_df, coords = c("Longitude", "Latitude"), crs = crs(pnr_raster))
-
-# Create SpatialPointsDataFrame for filtered PNR points
-coordinates(pnr_df) <- ~Longitude + Latitude
-proj4string(pnr_df) <- proj4string(pnr_raster)
+# Extract coordinates from the small pnr dataframe
+pnr_df_coords <- pnr_df[,1:2]
 
 # Extract carbon values according to small PNR points
-carbon_values <- extract(carbon_raster, pnr_df)
+carbon_values <- extract(carbon_raster, pnr_df_coords)
 
-# Create a carbon dataframe using filtered PNR layer coordinates
-carbon_df <- data.frame(Longitude = pnr_df$Longitude, Latitude = pnr_df$Latitude, Carbon_score = carbon_values)
+#plot(points(pnr_df_coords, col='red', pch=19))
 
-# Check carbon dataframe
-print(head(carbon_df))
+# Count the number of NA values
+na_count <- sum(is.na(carbon_values))
+na_count
 
-# Extract carbon values according to small pnr points
-carbon_values <- extract(carbon_raster, pnr_points_filtered)
+# Directly adding carbon value into the existed pnr dataframe
+pnr_df$carbon <- carbon_values
 
-carbon_values <- raster::extract(carbon_raster, as(pnr_points_filtered, "Spatial"))
-
-# Create a carbon dataframe using filtered pnr layer coordinates
-carbon_df <- data.frame(Longitude = pnr_df$Longitude, Latitude = pnr_df$Latitude, Carbon_score = carbon_values)
-
-# Extract filtered pnr points coordinates
-pnr_filtered_coords <- coordinates(pnr_points_filtered)
-
-# Create a carbon dataframe using small pnr layer coordination
-carbon_df <- data.frame(Longitude = pnr_filtered_coords[, 1], Latitude = pnr_filtered_coords[, 2], Carbon_score = carbon_values)
-
-# Check carbon dataframe
-print(head(carbon_df))
-
-# Subset to remove rows where carbon values are NA
-carbon_df <- carbon_df[carbon_df$carbon_values != NA, ]
-
-# Subset to remove rows where PNR_score is 0
-pnr_df <- pnr_df[pnr_df$PNR_score != 0, ]
-# Save the dataframe as an RData file
+# Save the with carbon value pnr dataframe as an RData file
 save(pnr_df, file = "./preprocessing/pnr_data.RData")
+
 # Load the saved RData file
-load("pnr_data.RData")
+load("preprocessing/pnr_data.RData")
 
-### the above trial match with pnr points, but there are some NA values ######
+# Check carbon dataframe
+print(head(pnr_df))
 
-######## all these following are trials, using raster function, but the points did not match with the pnr layer ######
+################## IUCN threatened biodiversity layer ################################################
 
+# Load the biodiversity raster using terra
+bio_rast <- raster("Data/Benefits/Combined_THR_SR_2023/Combined_THR_SR_2023.tif")
 
+# Ensure the CRS of the PNR raster and bio rast are the same
+crs(bio_rast) <- crs(project_pnr)
 
+# Resample the reprojected raster (this doesn't work, resulted in all NaN values)
+#bio_rast <- resample(bio_rast, project_pnr, method = 'bilinear')
 
-carbon_points <- rasterToPoints(carbon_rescale_raster, spatial = FALSE)
-carbon_coords <- carbon_points[, 1:2]
-carbon_values <- carbon_points[, 3]
-colnames(carbon_points) <- c("Longitude", "Latitude", "Carbon_score")
-carbon_df <- data.frame(Longitude = carbon_coords[, 1], Latitude = carbon_coords[, 2], Carbon_score = carbon_values)
+# try another method (this disaggregate needs to be run under raster raster, doesn't wrok as well)
 
-# Check the structure and head of the data frame to ensure correctness
-print(head(carbon_df))
-
-merged_df <- merge(pnr_df, carbon_df, by = c("Longitude", "Latitude"))
-print(head(merged_df))
-
-
-
-
-
-
-
-
-
-# Ensure the carbon layer has the same projection, extent, resolution with the pnr layer
-carbon_raster <- terra::project(carbon_raster, pnr_raster)
-carbon_raster <- terra::resample(carbon_raster, pnr_raster, method='bilinear')
-
-# Custom rescale function that handles NA values
-rescale_with_na <- function(x) {
-  if (all(is.na(x))) {
-    return(x)
-  }
-  valid_values <- !is.na(x)
-  x[valid_values] <- scales::rescale(x[valid_values], to = c(0, 1))
-  return(x)
-}
-
-#terra
-rescale_with_na <- function(x) {
-  valid_values <- !is.na(values(x))
-  x[valid_values] <- scales::rescale(values(x)[valid_values], to = c(0, 1))
-  return(x)
-}
-
-# Rescale the carbon layer to 0-1 range while handling NA values
-carbon_min <- minmax(carbon_raster)[1]
-carbon_max <- minmax(carbon_raster)[2]
-carbon_raster <- (carbon_raster - carbon_min) / (carbon_max - carbon_min)
-carbon_points <- as.data.frame(terra::xyFromCell(carbon_raster, 1:ncell(carbon_raster)))
-carbon_values <- terra::values(carbon_raster)
-carbon_df <- data.frame(carbon_points, Carbon_score = carbon_values)
-
-colnames(carbon_df) <- c("Longitude", "Latitude", "Carbon_score")
-
-# Check the structure and head of the data frame to ensure correctness
-print(head(carbon_df))
+# use the disaggregate function, split each large cell into multiple smaller cells, maintaining the original values
+# Calculate the disaggregation factor
+# factor_x <- round(res(bio_rast)[1] / res(project_pnr)[1])
+# factor_y <- round(res(bio_rast)[2] / res(project_pnr)[2])
+# 
+# # Define a function to disaggregate in steps
+# disaggregate_in_steps <- function(raster, factor_x, factor_y, step = 10) {
+#   current_raster <- raster
+#   remaining_factor_x <- factor_x
+#   remaining_factor_y <- factor_y
+#   
+#   while (remaining_factor_x > step || remaining_factor_y > step) {
+#     step_x <- min(step, remaining_factor_x)
+#     step_y <- min(step, remaining_factor_y)
+#     
+#     current_raster <- disaggregate(current_raster, fact = c(step_x, step_y))
+#     
+#     remaining_factor_x <- remaining_factor_x / step_x
+#     remaining_factor_y <- remaining_factor_y / step_y
+#   }
+#   
+#   disaggregate(current_raster, fact = c(remaining_factor_x, remaining_factor_y))
+# }
+# 
+# # Disaggregate the bio_rast in steps to match the resolution of project_pnr
+# bio_rast_disaggregated <- disaggregate_in_steps(bio_rast, factor_x, factor_y)
+# 
+# # Verify the resolution of the disaggregated raster
+# print(res(bio_rast_disaggregated))
+# 
 
 
 
+# Reproject the bio rast to match the CRS of the PNR raster
+#bio_rast_proj <- terra::project(bio_rast, project_pnr)
 
-print(minmax(carbon_raster))
+# bio_rast_resampled <- terra::resample(bio_rast, project_pnr, method='bilinear')
+# 
+# # Convert bio terra raster to raster object for extract coordination/carbon value/create dataframe
+# bio_raster <- raster(bio_rast_proj)
+# 
+# # Extract bio values according to small PNR points
+# bio_values <- extract(bio_raster, pnr_df_coords)
+# 
+# # Count the number of NA values
+# na_count <- sum(is.na(bio_values))
+# na_count
 
-carbon_raster <- app(carbon_raster, fun = rescale_with_na)
-
-# Verify the rescaled values
-carbon_min_rescaled <- minValue(carbon_raster)
-carbon_max_rescaled <- maxValue(carbon_raster)
-
-# Print the rescaled minimum and maximum values
-print(paste("Minimum value of rescaled Carbon raster:", carbon_min_rescaled))
-print(paste("Maximum value of rescaled Carbon raster:", carbon_max_rescaled))
-
-# Convert the rescaled carbon raster to points and extract coordinates and values
-carbon_points <- as.data.frame(terra::xyFromCell(carbon_raster, 1:ncell(carbon_raster)))
-carbon_values <- as.data.frame(values(carbon_raster))
-carbon_df <- data.frame(carbon_points, Carbon_score = carbon_values[,1])
-colnames(carbon_df) <- c("Longitude", "Latitude", "Carbon_score")
-print(head(carbon_df))
-
-
-
-carbon_points <- rasterToPoints(carbon_raster, spatial = TRUE)
-carbon_coords <- coordinates(carbon_points)
-carbon_values <- as.data.frame(carbon_points)[, 1]
-
-# Combine coordinates and values into a data frame for Carbon raster
-colnames(carbon_points) <- c("Longitude", "Latitude", "Carbon_score")
-carbon_df <- data.frame(Longitude = carbon_coords[, 1], Latitude = carbon_coords[, 2], Carbon_score = carbon_values)
-
-# Check the structure of the carbon points dataframe
-print(head(carbon_df))
-
-# IUCN threatened biodiversity layer#
-
-# Load the biodiversity raster
-bio_raster <- raster("Data/Benefits/Combined_THR_SR_2023/Combined_THR_SR_2023.tif")
-
+######## Try raster funtion projectRaster ## Warning messages: Point outside of projection domain (GDAL error 1), but values seemed to be kept alright)
+raster_pnr <- raster("Data/PNR_1KM.tif")
 # Ensure the bio layer has the same projection, extent, resolution with the pnr layer
-bio_raster <- projectRaster(bio_raster, raster_pnr)
+bio_raster <- projectRaster(bio_rast, raster_pnr)
 
-# Rescale the bio layer to 0-1 range while handling NA values
-bio_reraster <- calc(bio_raster, rescale_with_na)
-
-# Verify the rescaled values
-bio_min_rescaled <- minValue(bio_reraster)
-bio_max_rescaled <- maxValue(bio_reraster)
-
-# Print the rescaled minimum and maximum values
-print(paste("Minimum value of rescaled Biodiversity raster:", bio_min_rescaled))
-print(paste("Maximum value of rescaled Biodiversity raster:", bio_max_rescaled))
-
-# Convert the rescaled bio raster to points and extract coordinates and values
-bio_points <- rasterToPoints(bio_reraster, spatial = TRUE)
-bio_coords <- coordinates(bio_points)
-bio_values <- as.data.frame(bio_points)[, 1]
-
-# Combine coordinates and values into a data frame for bio raster
-bio_df <- data.frame(Longitude = bio_coords[, 1], Latitude = bio_coords[, 2], bio_score = bio_values)
-
-# Check the structure of the bio points dataframe
-print(head(bio_df))
 
 ######################## Feasibility layer ###############################
-#Cropland opportunity cost layer
+# opportunity cost layer
 
-# Load the crop land opportunity cost raster
-cropland_raster <- rast("Data/Feasibility/Vincent_opportunity_cost/Cropland_opp_cost_rast.tif")
+# Load the land opportunity cost raster, All_cost.tif raster is a combination of both cropland and pastureland opportunity cost layers, 
+#where the highest value is used (ie. if the opportunity cost value of cropland is higher than pastureland where they overlap, cropland is used)
+
+landcost_rast <- rast("Data/Feasibility/Vincent_opportunity_cost/All_cost.tif")
 
 # Ensure the cropland layer has the same projection, extent, resolution with the pnr layer
-cropland_raster <- projectRaster(cropland_raster, raster_pnr)
+landcost_rast_proj <- terra::project(landcost_rast, project_pnr)
 
-# Rescale the cropland layer to 0-1 range while handling NA values
-cropland_rescale_raster <- calc(cropland_raster, rescale_with_na)
+# Convert terra raster to raster object for extract coordination/carbon value/create dataframe
+landcost_raster <- raster(landcost_rast_proj)
 
-# Verify the rescaled values
-cropland_min_rescaled <- minValue(cropland_rescale_raster)
-cropland_max_rescaled <- maxValue(cropland_rescale_raster)
+# Extract carbon values according to small PNR points (0.2748491 of Na VALUES)
+landcost_values <- extract(landcost_raster, pnr_df_coords)
 
-# Print the rescaled minimum and maximum values
-print(paste("Minimum value of rescaled Cropland opportunity raster:", cropland_min_rescaled))
-print(paste("Maximum value of rescaled Cropland opportunity raster:", cropland_max_rescaled))
+# Directly adding landcost value into the existed pnr dataframe
+pnr_df$landcost <- landcost_values
 
-# Convert the rescaled bio raster to points and extract coordinates and values
-cropland_points <- rasterToPoints(cropland_rescale_raster, spatial = TRUE)
-cropland_coords <- coordinates(cropland_points)
-cropland_values <- as.data.frame(cropland_points)[, 1]
+# Save the new pnr dataframe (with carbon/landcost) as an RData file
+save(pnr_df, file = "./preprocessing/pnr_data.RData")
 
-# Combine coordinates and values into a data frame for bio raster
-cropland_df <- data.frame(Longitude = cropland_coords[, 1], Latitude = cropland_coords[, 2], cropland_score = cropland_values)
+# Load the saved RData file
+load("preprocessing/pnr_data.RData")
 
-# Check the structure of the bio points dataframe
-print(head(cropland_df))
+# Check carbon dataframe
+print(head(pnr_df))
 
 
 
