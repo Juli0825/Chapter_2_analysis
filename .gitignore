@@ -1,0 +1,9 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+/preprocessing/pnr_data.RData
+/Shapefile
+/points
+/preprocessing
+*.RData
